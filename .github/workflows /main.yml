@@ -2,28 +2,28 @@ name: daily court calendar scraper
 
 on:
   schedule:
-    - cron: '0 9 * * 1-5'  # Runs Mon–Fri at 9AM
-  workflow_dispatch:  # Allows manual trigger
+    - cron: '0 9 * * 1-5'   # Mon–Fri at 9AM
+  workflow_dispatch:        # Manual trigger
 
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v2
-
-      - name: Install pipenv
-        run: pip install pipenv
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # Use plain pip to keep this simple and fast.
       - name: Install dependencies
-        run: pipenv install --dev
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
 
       - name: Run scraper
         env:
-          KEY: ${{ secrets.KEY }}
-        run: pipenv run python fetch.py
+          BASEROW_TOKEN: ${{ secrets.BASEROW_TOKEN }}
+        run: python fetch.py
