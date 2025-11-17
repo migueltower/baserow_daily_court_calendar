@@ -6,6 +6,12 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
+import urllib3
+from requests.exceptions import SSLError, RequestException
+
+# Disable warnings when we fall back to verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 # =========================
 # CONFIG
 # =========================
@@ -59,9 +65,20 @@ def time_is_after_nine_am(time_str: str) -> bool:
 def scrape_data() -> List[Dict[str, Any]]:
     """Scrapes the daily court calendar just like the Airtable version."""
     url = "https://www.superiorcourt.maricopa.gov/calendar/today/"
-    response = requests.get(url, timeout=30)
-    if response.status_code != 200:
-        raise RuntimeError(f"Failed to fetch calendar page (status {response.status_code})")
+
+    try:
+        # First try with normal SSL verification
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+    except SSLError as e:
+        print(f"⚠️ SSL error when fetching {url}: {e}")
+        print("⚠️ Retrying without SSL verification (verify=False).")
+        # Fallback: disable certificate verification for this request
+        response = requests.get(url, timeout=30, verify=False)
+        response.raise_for_status()
+    except RequestException as e:
+        # Any other network-level error
+        raise RuntimeError(f"Failed to fetch calendar page: {e}") from e
 
     soup = BeautifulSoup(response.content, "html.parser")
     table = soup.find("table", id="tblZebra")
