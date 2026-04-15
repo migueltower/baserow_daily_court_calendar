@@ -56,7 +56,7 @@ def time_is_after_nine_am(time_str: str) -> bool:
     """Return True if time is at or after 9:00 AM."""
     try:
         t = datetime.strptime(time_str.strip(), "%I:%M %p").time()
-        nine_am = datetime.strptime("9:00 AM", "%I:%M %p").time()
+        nine_am = datetime.strptime("8:30 AM", "%I:%M %p").time()
         return t >= nine_am
     except Exception:
         return False
