@@ -100,11 +100,9 @@ def scrape_data() -> List[Dict[str, Any]]:
         time_str = cols[4].get_text(strip=True)
         case_number = cols[5].get_text(strip=True)
 
-        # Filter out floors 2 and 3 and 4, and times before 9:00 AM
-        if floor in ["2", "3", "4"]:
-            continue
-        if not time_is_after_nine_am(time_str):
-            continue
+        # Filter out floors 2 and 3 
+        if floor in ["2", "3"]:
+    continue
 
         entries.append({
             "Suspect Name": name,
