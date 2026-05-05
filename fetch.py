@@ -100,9 +100,9 @@ def scrape_data() -> List[Dict[str, Any]]:
         time_str = cols[4].get_text(strip=True)
         case_number = cols[5].get_text(strip=True)
 
-        # Filter out floors 2 and 3 
+        # Filter out floors 2 and 3
         if floor in ["2", "3"]:
-    continue
+            continue
 
         entries.append({
             "Suspect Name": name,
