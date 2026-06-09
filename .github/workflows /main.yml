@@ -2,7 +2,7 @@ name: daily court calendar scraper
 
 on:
   schedule:
-    - cron: '1 2 * * 1-5'   # Mon–Fri at 9AM
+    - cron: '0 12 * * 1-5'   # Mon–Fri at 9AM
   workflow_dispatch:        # Manual trigger
 
 jobs:
