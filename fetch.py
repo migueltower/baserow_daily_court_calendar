@@ -240,13 +240,18 @@ def scrape_data() -> List[Dict[str, Any]]:
             continue
 
         name = cols[0].get_text(strip=True)
-        floor = cols[2].get_text(strip=True)
-        room = cols[3].get_text(strip=True)
+        floor = cols[2].get_text(strip=True).upper()
+        room = cols[3].get_text(strip=True).upper()
         time_str = cols[4].get_text(strip=True)
         case_number = cols[5].get_text(strip=True)
 
-        # Filter out floors 2 and 3 completely
-        if floor in ["2", "3"]:
+        # Filter out actual floors 2 and 3, plus rooms that are 2/3 or start with 2/3.
+        # Examples skipped: floor 2, floor 3, room 2, room 3, 2A, 2B, 2D, 3A, 3B, 301, 302.
+        if floor in {"2", "3"} or room in {"2", "3"} or room.startswith(("2", "3")):
+            print(
+                f"⏭️ Skipping floor/room 2 or 3: "
+                f"{name} | floor {floor} | room {room} | {case_number}"
+            )
             continue
 
         entry = {
