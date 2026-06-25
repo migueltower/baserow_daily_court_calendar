@@ -28,5 +28,4 @@ jobs:
           BASEROW_TOKEN: ${{ secrets.BASEROW_TOKEN }}
           DELETE_ROWS_OLDER_THAN_DAYS: "1"
           BASEROW_CREATED_FIELD: "Created"
-          DRY_RUN_DELETE_OLD_ROWS: "true"
         run: python fetch.py
