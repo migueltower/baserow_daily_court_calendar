@@ -2,7 +2,7 @@ import os
 import time
 import json
 from typing import List, Dict, Any, Set, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -30,6 +30,16 @@ SKIP_EXISTING_ROWS = True
 
 # GitHub secret
 BASEROW_TOKEN = os.environ.get("BASEROW_TOKEN")
+
+# Cleanup settings
+# These are controlled from main.yml.
+BASEROW_CREATED_FIELD = os.environ.get("BASEROW_CREATED_FIELD", "Created")
+DELETE_ROWS_OLDER_THAN_DAYS = float(os.environ.get("DELETE_ROWS_OLDER_THAN_DAYS", "1"))
+DRY_RUN_DELETE_OLD_ROWS = os.environ.get("DRY_RUN_DELETE_OLD_ROWS", "false").lower() == "true"
+
+# This controls how often the delete loop prints progress and pauses briefly.
+# The delete itself uses Baserow's documented single-row DELETE endpoint.
+BASEROW_DELETE_BATCH_SIZE = int(os.environ.get("BASEROW_DELETE_BATCH_SIZE", "100"))
 
 
 # =========================
@@ -201,6 +211,137 @@ def baserow_create_rows_batch(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
 
     return response.json()
+
+
+# =========================
+# BASEROW CLEANUP
+# =========================
+def parse_baserow_datetime(value: Any) -> datetime | None:
+    """
+    Parse Baserow's Created field into a timezone-aware UTC datetime.
+    Baserow usually returns ISO datetime strings.
+    """
+    if not value:
+        return None
+
+    if not isinstance(value, str):
+        return None
+
+    value = value.strip()
+
+    # Convert trailing Z to Python-friendly UTC offset.
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        print(f"⚠️ Could not parse Created timestamp: {value}")
+        return None
+
+    # If Baserow returns a timezone-less value, treat it as UTC.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
+
+def fetch_old_baserow_row_ids() -> List[int]:
+    """
+    Fetch Baserow row IDs where the Created field is older than the configured cutoff.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=DELETE_ROWS_OLDER_THAN_DAYS)
+    old_row_ids: List[int] = []
+
+    url = f"{BASEROW_API_BASE}/api/database/rows/table/{BASEROW_TABLE_ID}/"
+    page = 1
+    size = 200
+
+    print(
+        f"🧹 Looking for Baserow rows where '{BASEROW_CREATED_FIELD}' "
+        f"is older than {DELETE_ROWS_OLDER_THAN_DAYS} day(s)."
+    )
+    print(f"🧹 Cutoff timestamp: {cutoff.isoformat()}")
+
+    while True:
+        params = _baserow_params()
+        params["page"] = str(page)
+        params["size"] = str(size)
+        params["include"] = BASEROW_CREATED_FIELD
+
+        response = baserow_request_with_retries(
+            "GET",
+            url,
+            params=params,
+            timeout=90,
+            max_attempts=5,
+        )
+
+        data = response.json()
+        results = data.get("results", [])
+
+        for row in results:
+            created_value = row.get(BASEROW_CREATED_FIELD)
+            created_dt = parse_baserow_datetime(created_value)
+
+            if created_dt is None:
+                continue
+
+            if created_dt < cutoff:
+                old_row_ids.append(row["id"])
+
+        if not data.get("next"):
+            break
+
+        page += 1
+
+    print(f"🧹 Found {len(old_row_ids)} old Baserow row(s) eligible for deletion.")
+    return old_row_ids
+
+
+def delete_old_baserow_rows(row_ids: List[int]) -> None:
+    """
+    Delete old rows from Baserow.
+    In dry-run mode, only prints what would be deleted.
+    """
+    if not row_ids:
+        print("🧹 No old Baserow rows to delete.")
+        return
+
+    if DRY_RUN_DELETE_OLD_ROWS:
+        print("🧪 DRY_RUN_DELETE_OLD_ROWS=true, so no rows were deleted.")
+        print(f"🧪 First 25 row IDs that would be deleted: {row_ids[:25]}")
+        return
+
+    print(f"🧹 Deleting {len(row_ids)} old Baserow row(s)...")
+
+    deleted_count = 0
+
+    for i, row_id in enumerate(row_ids, start=1):
+        url = f"{BASEROW_API_BASE}/api/database/rows/table/{BASEROW_TABLE_ID}/{row_id}/"
+
+        baserow_request_with_retries(
+            "DELETE",
+            url,
+            timeout=90,
+            max_attempts=5,
+        )
+
+        deleted_count += 1
+
+        if i % BASEROW_DELETE_BATCH_SIZE == 0:
+            print(f"🧹 Deleted {deleted_count}/{len(row_ids)} old Baserow row(s).")
+            time.sleep(1)
+
+    print(f"✅ Finished deleting {deleted_count} old Baserow row(s).")
+
+
+def cleanup_old_baserow_rows() -> None:
+    """
+    Main cleanup step. Runs before scraping and uploading today's rows.
+    """
+    old_row_ids = fetch_old_baserow_row_ids()
+    delete_old_baserow_rows(old_row_ids)
 
 
 # =========================
@@ -377,5 +518,6 @@ def push_to_baserow(entries: List[Dict[str, Any]]) -> None:
 # MAIN
 # =========================
 if __name__ == "__main__":
+    cleanup_old_baserow_rows()
     data = scrape_data()
     push_to_baserow(data)
